@@ -1,0 +1,45 @@
+FROM gradle:jdk17 AS build
+WORKDIR /src
+
+COPY gradle gradle
+COPY gradlew settings.gradle.kts build.gradle.kts ./
+COPY src src
+
+#RUN ./gradlew clean jar --no-daemon
+
+#RUN chmod +x /src/build/libs/*.jar
+
+FROM apache/spark:4.0.2
+WORKDIR /opt/app
+
+USER root
+#COPY --from=build /src/build/libs/*.jar /opt/app/app.jar
+
+RUN echo "root:spark" | chpasswd
+
+RUN apt-get update && apt-get install -y openssh-server sudo
+
+# Create the directory for the SSH server runtime data
+RUN mkdir /var/run/sshd
+
+# Create a new user named 'testuser' with a home directory and add to the sudo group
+RUN useradd -rm -d /home/spark-root -s /bin/bash -g root -G sudo -u 1000 spark-root
+
+# Set the password for the new user 'testuser' to 'testpassword'
+RUN echo 'spark-root:spark-root' | chpasswd
+
+# Optional: Set the root password as well (use with caution)
+# RUN echo 'root:rootpassword' | chpasswd
+
+# Allow password authentication for SSH (this is insecure for public/production environments)
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN sed -i 's/PermitRootLogin without-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+# Expose the SSH port
+EXPOSE 22
+
+# Start the SSH server when the container runs
+CMD ["/usr/sbin/sshd", "-D"]
+
+#COPY --from=build /src/build/runtime-libs/ /opt/app/runtime-libs/

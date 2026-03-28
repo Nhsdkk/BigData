@@ -1,0 +1,10 @@
+CALL upload_csv_to_table('/data/data1.csv');
+CALL upload_csv_to_table('/data/data2.csv');
+CALL upload_csv_to_table('/data/data3.csv');
+CALL upload_csv_to_table('/data/data4.csv');
+CALL upload_csv_to_table('/data/data5.csv');
+CALL upload_csv_to_table('/data/data6.csv');
+CALL upload_csv_to_table('/data/data7.csv');
+CALL upload_csv_to_table('/data/data8.csv');
+CALL upload_csv_to_table('/data/data9.csv');
+CALL upload_csv_to_table('/data/data10.csv');
