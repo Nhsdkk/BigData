@@ -1,6 +1,5 @@
 package org.example
 
-import org.apache.spark.sql.DataFrameWriter
 import org.apache.spark.sql.Dataset
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.expressions.Window
@@ -46,49 +45,59 @@ class ClickhouseExporter(
     }
 
     private fun Dataset<Row>.perMonthAndYearStatistics(name: String, columnName: String): Dataset<Row> {
-        val monthWindow = Window.orderBy(
+        val prevYearSameMonthWindow = Window.partitionBy(
+            org.jetbrains.kotlinx.spark.api.col("month"),
+        ).orderBy(
             org.jetbrains.kotlinx.spark.api.col("year"),
-            org.jetbrains.kotlinx.spark.api.col("month")
         )
+
+        val prevMonthWindow = Window.orderBy(
+            org.jetbrains.kotlinx.spark.api.col("year"),
+            org.jetbrains.kotlinx.spark.api.col("month"),
+        )
+
+        val prevMonthValue = functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(prevMonthWindow)
+        val prevYearSameMonthValue = functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(prevYearSameMonthWindow)
 
         return this
             .withColumn(
                 "prev_month_${name}",
                 functions.coalesce(
-                    functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(monthWindow),
+                    prevMonthValue,
                     lit(0)
                 )
             )
             .withColumn(
                 "percent_diff_prev_month_${name}",
                 functions.`when`(
-                    functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(monthWindow).isNull,
+                    prevMonthValue.isNull.or(prevMonthValue.equalTo(lit(0.0f))),
                     lit(0.0f)
                 )
                     .otherwise(
                         org.jetbrains.kotlinx.spark.api.col(columnName)
-                            .minus(functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(monthWindow))
-                            .divide(functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(monthWindow))
+                            .minus(functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(prevMonthWindow))
+                            .divide(functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(prevMonthWindow))
+                            .multiply(lit(100))
                     )
             )
             .withColumn(
                 "prev_year_same_month_${name}",
                 functions.coalesce(
-                    functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 12).over(monthWindow),
+                    prevYearSameMonthValue,
                     lit(0)
                 )
             )
             .withColumn(
                 "percent_diff_prev_year_same_month_${name}",
                 functions.`when`(
-                    functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 12).over(monthWindow)
-                        .equalTo(null).isNull,
+                    prevYearSameMonthValue.isNull.or(prevYearSameMonthValue.equalTo(lit(0.0f))),
                     lit(0.0f)
                 )
                     .otherwise(
                         org.jetbrains.kotlinx.spark.api.col(columnName)
-                            .minus(functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 12).over(monthWindow))
-                            .divide(functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 12).over(monthWindow))
+                            .minus(functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(prevYearSameMonthWindow))
+                            .divide(functions.lag(org.jetbrains.kotlinx.spark.api.col(columnName), 1).over(prevYearSameMonthWindow))
+                            .multiply(lit(100))
                     )
             )
     }
@@ -120,6 +129,9 @@ class ClickhouseExporter(
                 col("month"),
                 col("year"),
                 col("average_sold_items_per_month"),
+                col("total_sold_items_per_month"),
+                col("total_transactions_per_month"),
+                col("total_income_per_month"),
                 *listOf("income", "transactions_count", "sold_items_count").flatMap {
                     listOf(
                         col("prev_month_${it}"),
@@ -133,7 +145,7 @@ class ClickhouseExporter(
     }
 
     private fun exportProducts() {
-        val categoryWindow = Window.orderBy(products.col("category"))
+        val categoryWindow = Window.partitionBy(products.col("category")).orderBy(products.col("category"))
         val totalAmountSoldWindow = Window.orderBy(col("total_amount_sold").desc())
 
         products
@@ -181,7 +193,7 @@ class ClickhouseExporter(
     }
 
     private fun exportCustomers() {
-        val countryWindow = Window.orderBy(customers.col("country"))
+        val countryWindow = Window.partitionBy(customers.col("country")).orderBy(customers.col("country"))
         val totalMoneySpentWindow = Window.orderBy(col("total_money_spent").desc())
 
         customers
@@ -224,8 +236,8 @@ class ClickhouseExporter(
     }
 
     private fun exportStores() {
-        val countryWindow = Window.orderBy(stores.col("country"))
-        val cityWindow = Window.orderBy(stores.col("city"))
+        val countryWindow = Window.partitionBy(stores.col("country")).orderBy(stores.col("country"))
+        val cityWindow = Window.partitionBy(stores.col("city")).orderBy(stores.col("country"))
         val totalRevenueWindow = Window.orderBy(col("total_revenue").desc())
 
         stores
@@ -273,7 +285,7 @@ class ClickhouseExporter(
     }
 
     private fun exportSuppliers() {
-        val countryWindow = Window.orderBy(suppliers.col("country"))
+        val countryWindow = Window.partitionBy(suppliers.col("country")).orderBy(suppliers.col("country"))
         val totalRevenueWindow = Window.orderBy(col("total_revenue").desc())
 
         suppliers
