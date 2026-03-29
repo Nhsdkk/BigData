@@ -164,7 +164,7 @@ class ClickhouseExporter(
             )
             .agg(
                 functions.sum(transactions.col("total_price")).alias("total_sell_value"),
-                functions.sum(products.col("quantity")).alias("total_amount_sold"),
+                functions.sum(transactions.col("quantity")).alias("total_amount_sold"),
                 functions.sum(products.col("reviews")).alias("total_review_count"),
                 functions.sum(col("rating_sum")).alias("total_rating_sum")
             )
