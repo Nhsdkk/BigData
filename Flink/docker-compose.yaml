@@ -1,0 +1,103 @@
+services:
+  kafka:
+    hostname: kafka
+    image: confluentinc/confluent-local:7.7.8
+    restart: unless-stopped
+    environment:
+      KAFKA_LISTENERS: PLAINTEXT_EXTERNAL://0.0.0.0:9093, PLAINTEXT_CLUSTER://0.0.0.0:9092, PLAINTEXT_CONTROLLER://kafka:1234
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT_EXTERNAL:PLAINTEXT, PLAINTEXT_CLUSTER:PLAINTEXT, PLAINTEXT_CONTROLLER:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_EXTERNAL://localhost:9093, PLAINTEXT_CLUSTER://kafka:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_CLUSTER
+      KAFKA_CONTROLLER_LISTENER_NAMES: PLAINTEXT_CONTROLLER
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:1234
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/etc/kafka/jaas.conf -Xmx4G"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: true
+#      KAFKA_CREATE_TOPICS: csv_topic:1:1
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    networks:
+      - shared
+
+  jobmanager:
+    build:
+      dockerfile: ./Dockerfile.flink
+      context: .
+    ports:
+      - "8081:8081"
+    hostname: jobmanager
+    command: standalone-job --job-classname org.example.MainKt
+    environment:
+      - KAFKA_TOPIC_NAME=csv_topic
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/postgres
+      - POSTGRES_DATABASE=postgres
+      - POSTGRES_USERNAME=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_BATCH_SIZE=1000
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        parallelism.default: 5
+    networks:
+      - shared
+
+  kafka-importer:
+    build:
+      dockerfile: ./Dockerfile.kafka
+      context: .
+    environment:
+      KAFKA_TOPIC_NAME: csv_topic
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CSV_DATA_FOLDER_PATH: /data
+    depends_on:
+      - kafka
+      - postgres
+    volumes:
+      - ./data:/data
+    networks:
+      - shared
+
+  taskmanager:
+    build:
+      dockerfile: ./Dockerfile.flink
+      context: .
+    depends_on:
+      - jobmanager
+      - postgres
+    command: taskmanager
+    hostname: taskmanager
+    environment:
+      - KAFKA_TOPIC_NAME=csv_topic
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - POSTGRES_URL=jdbc:postgresql://postgres:5432/postgres
+      - POSTGRES_DATABASE=postgres
+      - POSTGRES_USERNAME=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_BATCH_SIZE=1000
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 6
+    networks:
+      - shared
+
+  postgres:
+    image: postgres:18-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ./data:/data
+      - ./scripts:/docker-entrypoint-initdb.d
+    networks:
+      - shared
+
+networks:
+  shared:
+    driver: bridge

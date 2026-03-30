@@ -1,0 +1,12 @@
+FROM openjdk:24-rc-jdk-slim as BUILD
+
+COPY . /src
+WORKDIR /src
+RUN ./gradlew --no-daemon shadowJar kafka:main
+
+FROM openjdk:24-rc-jdk-slim
+
+COPY --from=BUILD /src/kafka/build/libs/kafka-1.0-SNAPSHOT-all.jar /bin/runner/run.jar
+WORKDIR /bin/runner
+
+CMD ["java","-jar","run.jar"]
