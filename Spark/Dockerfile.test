@@ -1,0 +1,16 @@
+FROM apache/spark:4.0.2
+WORKDIR /opt/app
+
+USER root
+
+RUN echo "root:spark" | chpasswd
+
+RUN apt-get update && apt-get install -y openssh-server sudo
+
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN sed -i 's/PermitRootLogin without-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+EXPOSE 22
+
+CMD ["/usr/sbin/sshd", "-D"]

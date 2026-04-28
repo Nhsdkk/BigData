@@ -1,0 +1,91 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ./data:/data
+      - ./scripts:/docker-entrypoint-initdb.d
+    networks:
+      - shared
+
+  spark-master:
+    image: apache/spark:4.0.2
+    hostname: spark-master
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    command:
+      [
+        "/opt/spark/bin/spark-class",
+        "org.apache.spark.deploy.master.Master"
+      ]
+    networks:
+      - shared
+
+  spark-worker:
+    image: apache/spark:4.0.2
+    depends_on:
+      - spark-master
+    command:
+      [
+        "/opt/spark/bin/spark-class",
+        "org.apache.spark.deploy.worker.Worker",
+        "spark://spark-master:7077"
+      ]
+    environment:
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: "2g"
+    networks:
+      - shared
+
+#  submit-test:
+#    build:
+#      dockerfile: Dockerfile.test
+#      context: .
+#    user: root
+#    pull_policy: always
+#    depends_on:
+#      - spark-master
+#      - spark-worker
+#    env_file: test.env
+#    ports:
+#      - "2022:22"
+#    networks:
+#      - shared
+
+  submit:
+    build:
+      dockerfile: ./Dockerfile
+      context: .
+    user: root
+    pull_policy: always
+    depends_on:
+      - spark-master
+      - spark-worker
+    env_file: test.env
+    networks:
+      - shared
+
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    environment:
+      CLICKHOUSE_DB: postgres_exported
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    networks:
+      - shared
+    volumes:
+      - ./clickhouse-config.xml:/etc/clickhouse-server/config.d/z_log_disable.xml
+
+networks:
+  shared:
+    driver: bridge
