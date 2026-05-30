@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: trino_lab_postgres
+    environment:
+      POSTGRES_DB: etl_lab
+      POSTGRES_USER: etl
+      POSTGRES_PASSWORD: etl
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+      - ./data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U etl -d etl_lab"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: trino_lab_clickhouse
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: etl
+      CLICKHOUSE_PASSWORD: etl
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./docker/clickhouse/init:/docker-entrypoint-initdb.d:ro
+      - ./data:/var/lib/clickhouse/user_files
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  trino:
+    image: trinodb/trino:480
+    container_name: trino_lab_trino
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    command: ["/bin/sh", "/opt/trino-cmd/auto-run.sh"]
+    volumes:
+      - ./docker/trino/catalog:/etc/trino/catalog:ro
+      - ./docker/trino/cmd:/opt/trino-cmd:ro
+      - ./sql/trino:/opt/trino-sql:ro
+
+volumes:
+  postgres_data:
+  clickhouse_data:
